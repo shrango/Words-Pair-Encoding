@@ -1,15 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Author: Rico Sennrich
 
-"""Use operations learned with learn_bpe.py to encode a new text.
-The text will not be smaller, but use only a fixed vocabulary, with rare words
-encoded as variable-length sequences of subword units.
-
-Reference:
-Rico Sennrich, Barry Haddow and Alexandra Birch (2015). Neural Machine Translation of Rare Words with Subword Units.
-Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (ACL 2016). Berlin, Germany.
-"""
+'''
+This script is adapted from subword-nmt. Therefore, you may find some annotation about BPE.
+Please just ignore them.
+'''
 
 from __future__ import unicode_literals, division
 
@@ -29,7 +24,7 @@ from multiprocessing import Pool, cpu_count
 from io import open
 argparse.open = open
 process_phrase=False
-# python apply_bpe.py -c temp.out --input test.en --output test.bpe.en --num-workers 1 --sep #$\&
+
 class BPE(object):
 
     def __init__(self, codes, merges=-1, separator='@@', vocab=None, glossaries=None):
@@ -242,10 +237,10 @@ def create_parser(subparsers=None):
         help="Number of processors to process texts, only supported in Python3. If -1, set `multiprocessing.cpu_count()`. (default: %(default)s)")
     parser.add_argument(
         '--phrase-level', type=bool, default=False,
-        help="是否在处理短语级别"
+        help="Processing phrase level"
     )
     parser.add_argument(
-        '--sep', type=str, default='', help='分隔符，可以是#$&'
+        '--sep', type=str, default='', help='The separation sign, please make sure it will not appear in corpus, #$& recommended'
     )
     return parser
 sep_sign = ''

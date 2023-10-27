@@ -2,13 +2,18 @@
 # -*- coding: utf-8 -*-
 # Author: Rico Sennrich
 
-"""Use byte pair encoding (BPE) to learn a variable-length encoding of the vocabulary in a text.
-Unlike the original BPE, it does not compress the plain text, but can be used to reduce the vocabulary
-of a text to a configurable number of symbols, with only a small increase in the number of tokens.
+"""
+This script is adapted from subword-nmt. Therefore, you may find some annotation about BPE.
+Please just ignore them.
 
-Reference:
-Rico Sennrich, Barry Haddow and Alexandra Birch (2016). Neural Machine Translation of Rare Words with Subword Units.
-Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (ACL 2016). Berlin, Germany.
+The principle of WPE is a higher level BPE.
+e.g.:
+BPE split words into characters and re-combine characters/subwords, like: 
+    'standard' -> 's', 't', 'a', 'n', 'd', 'a', 'r', 'd'
+    -> 'stand', 'ard'
+WPE split sentences into words and re-combine words/semantic units, like:
+    'They are close to one another' -> 'They', 'are', 'close', 'to', 'one', 'another'
+    -> 'They', 'are', 'close to', 'one another'
 """
 
 from __future__ import unicode_literals
@@ -74,15 +79,16 @@ def create_parser(subparsers=None):
         help="verbose mode.")
     parser.add_argument(
         '--sep', type=str, default='',
-        help='两个char/token之间的分隔符'
+        help='The separation sign, please make sure it will not appear in corpus, #$& recommended'
     )
     parser.add_argument(
         '--delta', type=int, default=10,
-        help='超参'
+        help='filter combinations of frequence less than delta'
     )
     parser.add_argument(
         '--scorefuc', type=str, default='sqrt',
-        help='代表打分函数类型，sqrt表示(w1,w2-δ)/sqrt{w1*w2}，min表示(w1,w2-δ)/min{w1,w2}'
+        help='sqrt means:(w1,w2-δ)/sqrt{w1*w2}，min: (w1,w2-δ)/min{w1,w2}'
+        # min works badly, not recommended
     )
 
     return parser
@@ -170,21 +176,17 @@ def _get_vocabulary(infile, outfile, begin, end):
         pickle.dump(vocab, f)
 
 def update_pair_statistics(pair, changed, stats, indices):
-    # 更新stats的时候不能简单的减一，因为里面不是简单的频率了，而是要重新按score_func算
     """Minimally update the indices and frequency of symbol pairs
 
     if we merge a pair of symbols, only pairs that overlap with occurrences
     of this pair are affected, and need to be updated.
     """
-    # pdb.set_trace()
-    # global的写法很答辩，但是它没有封装成一个类，我也没办法啊
     global global_uni_stats
     global global_pair_freq
     stats[pair] = 0
     indices[pair] = defaultdict(int)
     first, second = pair
     new_pair = first+sep_sign+second
-    # pdb.set_trace()
     for j, word, old_word, freq in changed:
         need_update = set([])
         # find all instances of pair, and update frequency/indices around it
@@ -198,12 +200,8 @@ def update_pair_statistics(pair, changed, stats, indices):
             # if first symbol is followed by second symbol, we've found an occurrence of pair (old_word[i:i+2])
             if i < len(old_word)-1 and old_word[i+1] == second:
                 # assuming a symbol sequence "A B C", if "B C" is merged, reduce the frequency of "A B"
-                # pdb.set_trace()
                 if i:
                     prev = old_word[i-1:i+1]
-                    # if prev[0]=='narrowness' or prev[1]=='narrowness':
-                    #     print("A")
-                    #     pdb.set_trace()
                     global_uni_stats[prev[0]]-=freq
                     global_uni_stats[prev[1]]-=freq
                     global_pair_freq[prev]-=freq
@@ -217,17 +215,13 @@ def update_pair_statistics(pair, changed, stats, indices):
                     # however, skip this if the sequence is A B C B C, because the frequency of "C B" will be reduced by the previous code block
                     if old_word[i+2] != first or i >= len(old_word)-3 or old_word[i+3] != second:
                         nex = old_word[i+1:i+3]
-                        # if nex[0]=='narrowness' or nex[1]=='narrowness':
-                        #     print("B")
-                        #     pdb.set_trace()
-                        # 在我的情况下还得考虑"A B C D B C"的情况下，D的uni频率被减2次的问题
+                        # In case of "A B C D B C", global_uni_stats[D] is minused twice
                         if i<len(old_word)-4 and old_word[i+3:i+5]==pair:
                             pass
                         else:
                             global_uni_stats[nex[0]]-=freq
                             global_uni_stats[nex[1]]-=freq
                         global_pair_freq[nex]-=freq
-                        # 减的话一定会减完，所以一定是0，那么打分取一个很小的数就行了，不用再算
                         if score_fun in ('sqrt','min'):
                             stats[nex] = -100
                         else:
@@ -239,7 +233,6 @@ def update_pair_statistics(pair, changed, stats, indices):
 
         i = 0
         while True:
-            # pdb.set_trace()
             try:
                 # find new pair
                 i = word.index(new_pair, i)
@@ -252,34 +245,21 @@ def update_pair_statistics(pair, changed, stats, indices):
                 global_uni_stats[prev[1]]+=freq
                 global_pair_freq[prev]+=freq
                 need_update.add(prev)
-                # stats[prev] += freq
-                # if score_fun=='sqrt':
-                #     stats[prev] = (global_pair_freq[prev]-1-delta)/(global_uni_stats[prev[0]]*global_uni_stats[prev[1]])**0.5
-                # elif score_fun=='min':
-                #     print("还没实现，来line249找")
                 indices[prev][j] += 1
             # assuming a symbol sequence "A BC B", if "B C" is merged, increase the frequency of "BC B"
             # however, if the sequence is A BC BC, skip this step because the count of "BC BC" will be incremented by the previous code block
             if i < len(word)-1 and word[i+1] != new_pair:
                 nex = word[i:i+2]
-                # if nex[1]=='narrowness':
-                #     pdb.set_trace()
                 global_uni_stats[nex[0]]+=freq
                 global_uni_stats[nex[1]]+=freq
                 if not global_uni_stats[nex[0]]*global_uni_stats[nex[1]]:
-                    print("警告！出现了问题,",word,'问题词是',nex)
+                    print("Warning!",word,'The problem word is',nex)
                     if not global_uni_stats[nex[0]]:
                         global_uni_stats[nex[0]]=1
                     else:
                         global_uni_stats[nex[1]]=1
-                    # pdb.set_trace()
                 global_pair_freq[nex]+=freq
                 need_update.add(nex)
-                # if score_fun=='sqrt':
-                #     stats[nex] = (global_pair_freq[nex]-1-delta)/(global_uni_stats[nex[0]]*global_uni_stats[nex[1]])**0.5
-                # elif score_fun=='min':
-                #     print("还没实现，来line261找")
-                # stats[nex] += freq
                 indices[nex][j] += 1
             i += 1
         for p in need_update:
@@ -294,7 +274,6 @@ def get_pair_statistics(vocab):
     uni_stats = defaultdict(int)
     #index from pairs to words
     indices = defaultdict(lambda: defaultdict(int))
-    # pdb.set_trace()
     for i, (word, freq) in enumerate(vocab):
         prev_char = word[0]
         uni_stats[prev_char] += freq
@@ -364,10 +343,10 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=1e-8, verbose=False, i
         vocab[k]+=1
     # pdb.set_trace()
     # vocab = dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in vocab.items()])
-    print("delta是",delta)
-    print("sep是",sep_sign)
-    print("最小分数",min_frequency)
-    print("打分函数是",score_fun)
+    print("delta is",delta)
+    print("sep sign is",sep_sign)
+    print("min frequency is",min_frequency)
+    print("score function is",score_fun)
     sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
     global global_uni_stats
     global global_pair_freq
@@ -378,9 +357,8 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=1e-8, verbose=False, i
     elif score_fun=="min":
         score_stats = {pair:(global_pair_freq[pair]-delta)/min(global_uni_stats[pair[0]],global_uni_stats[pair[1]]) for pair in stats}
     else:
-        assert False, "score_function错误"
-        
-    # pdb.set_trace()# 47124
+        assert False, "score_function error"
+
     big_stats = copy.deepcopy(score_stats)
 
     if total_symbols:
@@ -397,11 +375,9 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=1e-8, verbose=False, i
 
     # threshold is inspired by Zipfian assumption, but should only affect speed
     threshold = max(score_stats.values()) / 20000
-    # enzh大数据集上的阈值稍微调低一些
-    # pdb.set_trace()
-    print("阈值是",threshold)
+    # use smaller threshold in big dataset like WMT17-enzh
+    print("threshold is",threshold)
     for i in tqdm(range(num_symbols)):
-        # pdb.set_trace()
         if score_stats:
             most_frequent = max(score_stats, key=lambda x: (score_stats[x], x))
         # print(most_frequent)
@@ -420,10 +396,8 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=1e-8, verbose=False, i
 
         if verbose:
             sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, most_frequent[0], most_frequent[1], stats[most_frequent]))
-        # pdb.set_trace()
         outfile.write('{0} {1}\n'.format(*most_frequent))
         # outfile.write(most_frequent[0]+sep_sign+most_frequent[1]+'\n')
-        # pdb.set_trace()
         changes = replace_pair(most_frequent, sorted_vocab, indices)
         update_pair_statistics(most_frequent, changes, score_stats, indices)
         score_stats[most_frequent] = 0

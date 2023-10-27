@@ -31,7 +31,7 @@ with open(args.input,'r',encoding='utf-8')as f:
     content = f.readlines()
 
 remains = [line for line in content if keep(line)]
-print('原有短语{}条,剩余短语{}条'.format(len(content),len(remains)))
+print('There are {} phrases before filter, and {} after'.format(len(content),len(remains)))
 if not args.output:
     args.output = args.input+'.filterout'
 with open(args.output,'w',encoding='utf-8')as f:
